@@ -36,7 +36,7 @@ Never ask for, accept or pass on phone numbers, login codes or two-step verifica
 
 ## Version and fetching
 
-`.telepeep/version` (committed) holds the pinned version, one line, e.g. `0.1.0`. `.telepeep/tool/` (not in git) holds the source of that tag; uv builds its environment on the first run.
+`.telepeep/version` (committed) holds the pinned version, one line, e.g. `0.2.0`. `.telepeep/tool/` (not in git) holds the source of that tag; uv builds its environment on the first run.
 
 If `.telepeep/tool/` does not exist, fetch it from the project root (needs `git`, `uv`, access to github.com and PyPI), with `<version>` from `.telepeep/version`:
 
