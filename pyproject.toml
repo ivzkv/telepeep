@@ -10,6 +10,8 @@ dependencies = [
     "platformdirs>=4",
     "tomli-w>=1",
     "qrcode>=7",  # QR login: printed in the terminal, scanned with the phone
+    "keyring>=25",
+    "cryptography>=42",
 ]
 keywords = ["telegram", "telethon", "cli", "ai-agent", "claude-code", "read-only"]
 

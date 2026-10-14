@@ -12,6 +12,7 @@ account deeper into limits. Telegram errors become TelepeepError here; the rest 
 from __future__ import annotations
 
 import asyncio
+import base64
 import functools
 import getpass
 import os
@@ -20,9 +21,11 @@ from pathlib import Path
 from typing import Callable
 
 from telethon import TelegramClient, errors, utils
+from telethon.crypto import AuthKey
+from telethon.sessions import MemorySession
 from telethon.tl import types
 
-from . import __version__, config
+from . import __version__, vault
 from .config import Account, Config
 from .errors import EXIT_NOT_READY, EXIT_TELEGRAM, TelepeepError
 from .project import RUN
@@ -63,9 +66,43 @@ def _translated(fn):
     return wrapper
 
 
-def _client(session: Path, api_id: int, api_hash: str, *, receive_updates: bool = False) -> TelegramClient:
+class VaultSession(MemorySession):
+    """Telethon's session kept by vault.py instead of an SQLite file: in memory while connected, written (encrypted by
+    default) on every save. Kept: data center, auth key, entity cache. Not kept: update state (updates are not read)
+    and the uploaded-files cache (nothing is uploaded)."""
+
+    def __init__(self, alias: str, storage: str):
+        super().__init__()
+        self._alias, self._storage = alias, storage
+        data = vault.read(alias, storage)
+        if data is not None:
+            self._dc_id, self._server_address, self._port = data["dc_id"], data["server_address"], data["port"]
+            self._auth_key = AuthKey(base64.b64decode(data["auth_key"])) if data["auth_key"] else None
+            self._takeout_id = data["takeout_id"]
+            self._entities = {tuple(e) for e in data["entities"]}
+
+    def clone(self, to_instance=None):
+        # Sessions Telethon makes for other data centers (file downloads via CDN) live in memory only
+        return to_instance or MemorySession()
+
+    def save(self):
+        vault.write(self._alias, {
+            "dc_id": self._dc_id, "server_address": self._server_address, "port": self._port,
+            "auth_key": base64.b64encode(self._auth_key.key).decode("ascii") if self._auth_key and self._auth_key.key
+            else None,
+            "takeout_id": self._takeout_id, "entities": sorted(self._entities, key=lambda e: e[0]),
+        }, self._storage)
+
+    def close(self):
+        self.save()
+
+    def delete(self):
+        vault.delete(self._alias)
+
+
+def _client(alias: str, cfg: Config, *, receive_updates: bool = False) -> TelegramClient:
     return TelegramClient(
-        str(session), api_id, api_hash,
+        VaultSession(alias, cfg.session_storage), *cfg.require_api(),
         # No update loop when reading: nothing to react to. QR login needs it: the scan arrives as an update.
         receive_updates=receive_updates,
         flood_sleep_threshold=0,  # FloodWait → error at once, never a silent sleep
@@ -148,11 +185,9 @@ class Telegram:
 
     def __init__(self, cfg: Config, account: Account):
         self.account = account
-        self.session = config.session_path(account.alias)
-        # Checked before creating the client: Telethon creates an empty session file on construction
-        if not self.session.exists():
+        if not vault.exists(account.alias):
             raise not_logged_in(account.alias, "no session on this machine")
-        self.client = _client(self.session, *cfg.require_api())
+        self.client = _client(account.alias, cfg)
         self._messages: dict = {}
 
     @_translated
@@ -340,9 +375,7 @@ async def _login_phone(client: TelegramClient) -> None:
 @_translated
 async def login(cfg: Config, alias: str, *, use_phone: bool, show_qr: Callable[[str], None]) -> dict:
     """QR by default: scanned from the phone's Telegram, no code to deliver. --phone: the classic code flow."""
-    session = config.session_path(alias)
-    session.parent.mkdir(parents=True, exist_ok=True)
-    client = _client(session, *cfg.require_api(), receive_updates=True)
+    client = _client(alias, cfg, receive_updates=True)
     try:
         await client.connect()
         if not await client.is_user_authorized():
@@ -354,22 +387,24 @@ async def login(cfg: Config, alias: str, *, use_phone: bool, show_qr: Callable[[
         return {"user_id": me.id, "name": utils.get_display_name(me), "username": me.username}
     finally:
         await client.disconnect()
-        if os.name == "posix" and session.exists():
-            session.chmod(0o600)
 
 
 @_translated
 async def logout(cfg: Config, alias: str) -> bool:
-    """Ends the session on Telegram's side too (it disappears from Settings → Devices) and deletes the file."""
-    session = config.session_path(alias)
-    if not session.exists():
+    """Ends the session on Telegram's side too (it disappears from Settings → Devices), deletes the file and its key."""
+    if not vault.exists(alias):
         return False
-    client = _client(session, *cfg.require_api())
+    try:
+        client = _client(alias, cfg)
+    except TelepeepError as e:
+        vault.delete(alias)
+        raise TelepeepError("logout_local_only", f"{e.message}; it is deleted on this machine, but still active in "
+                            "Telegram", hint="end it in Telegram → Settings → Devices (shown as telepeep)") from None
     try:
         await client.connect()
         if await client.is_user_authorized():
             await client.log_out()
     finally:
         await client.disconnect()
-        session.unlink(missing_ok=True)
+        vault.delete(alias)
     return True

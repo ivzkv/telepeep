@@ -1,6 +1,38 @@
+import keyring
 import pytest
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
 
-from telepeep import config
+from telepeep import config, vault
+
+
+class MemoryKeyring(KeyringBackend):
+    priority = 1
+
+    def __init__(self):
+        super().__init__()
+        self.items = {}
+
+    def get_password(self, service, username):
+        return self.items.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.items[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if self.items.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@pytest.fixture(autouse=True)
+def secret_store(monkeypatch):
+    """Never the real OS secret store: an in-memory one, fresh for each test."""
+    store = MemoryKeyring()
+    previous = keyring.get_keyring()
+    keyring.set_keyring(store)
+    monkeypatch.setattr(vault, "_keys", {})
+    yield store
+    keyring.set_keyring(previous)
 
 
 @pytest.fixture
@@ -24,5 +56,5 @@ def catalog(home):
     })
     config.save(cfg)
     config.SESSIONS_DIR.mkdir(parents=True)
-    (config.SESSIONS_DIR / "work.session").write_bytes(b"")
+    vault.path("work").write_bytes(b"")
     return config.load()

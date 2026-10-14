@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from . import config
+from . import vault
 from .config import Account, CatalogChat, Config
 from .errors import EXIT_USAGE, TelepeepError, no_access
 from .project import RUN, Access
@@ -87,7 +87,7 @@ def effective(access: Access, cfg: Config) -> list[dict]:
             status = "unknown_account"
         elif cat is None:
             status = "not_in_catalog"
-        elif not config.session_path(g.account).exists():
+        elif not vault.exists(g.account):
             status = "not_logged_in"
         else:
             status = "ok"

@@ -1,7 +1,7 @@
 """Machine-wide state, shared by all projects of this OS user.
 
   <user config dir>/config.toml              api_id/api_hash, limits, accounts and the catalog of chats of each
-  <user data dir>/sessions/<alias>.session   Telethon session of an account — full access to that account
+  <user data dir>/sessions/<alias>.tps       session of an account — full access to it; encrypted (vault.py)
 
 The catalog is the upper bound of what any project may read: a project grant (project.py) works only for a chat that is
 in its account's catalog here. Paths come from platformdirs: %APPDATA% / %LOCALAPPDATA% on Windows, ~/.config and
@@ -29,6 +29,7 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 SESSIONS_DIR = DATA_DIR / "sessions"
 
 DEFAULT_MAX_MEDIA_MB = 50
+STORAGES = ("keyring", "file")  # where session keys live: the OS secret store, or none (unencrypted file)
 
 # Account aliases and chat names: safe in file names, refs (`account:name`) and TOML keys without quoting
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -61,6 +62,7 @@ class Config:
     api_id: int | None = None
     api_hash: str | None = None
     max_media_mb: int = DEFAULT_MAX_MEDIA_MB
+    session_storage: str = "keyring"  # or "file"; see vault.py
     accounts: dict[str, Account] = field(default_factory=dict)
 
     def require_api(self) -> tuple[int, str]:
@@ -84,10 +86,6 @@ def check_name(value: str, what: str) -> str:
     if not NAME_RE.match(value):
         raise TelepeepError("bad_name", f"{what} '{value}': use 1–32 characters a-z 0-9 _ -, starting with a letter or digit")
     return value
-
-
-def session_path(alias: str) -> Path:
-    return SESSIONS_DIR / f"{check_name(alias, 'account alias')}.session"
 
 
 def _bad(message: str) -> TelepeepError:
@@ -115,7 +113,10 @@ def load() -> Config:
         api_id=_typed(tg["api_id"], int, "telegram.api_id") if "api_id" in tg else None,
         api_hash=_typed(tg["api_hash"], str, "telegram.api_hash") if "api_hash" in tg else None,
         max_media_mb=_typed(raw.get("limits", {}).get("max_media_mb", DEFAULT_MAX_MEDIA_MB), int, "limits.max_media_mb"),
+        session_storage=_typed(raw.get("sessions", {}).get("storage", "keyring"), str, "sessions.storage"),
     )
+    if cfg.session_storage not in STORAGES:
+        raise _bad(f"sessions.storage must be one of: {', '.join(STORAGES)}")
     for alias, body in _typed(raw.get("accounts", {}), dict, "accounts").items():
         if not NAME_RE.match(alias):
             raise _bad(f"account alias '{alias}' is not valid")
@@ -139,6 +140,7 @@ def save(cfg: Config) -> None:
     if cfg.api_id or cfg.api_hash:
         raw["telegram"] = {k: v for k, v in (("api_id", cfg.api_id), ("api_hash", cfg.api_hash)) if v}
     raw["limits"] = {"max_media_mb": cfg.max_media_mb}
+    raw["sessions"] = {"storage": cfg.session_storage}
     raw["accounts"] = {}
     for alias, acc in cfg.accounts.items():
         body: dict = {}
@@ -148,12 +150,22 @@ def save(cfg: Config) -> None:
             body["label"] = acc.label
         body["chats"] = [{"id": c.id, "name": c.name} for c in acc.chats]
         raw["accounts"][alias] = body
-    write_atomic(CONFIG_FILE, HEADER + tomli_w.dumps(raw))
+    write_atomic(CONFIG_FILE, HEADER + tomli_w.dumps(raw), private=True)  # holds api_hash
 
 
-def write_atomic(path: Path, text: str) -> None:
-    """A crash mid-write must not leave a half-written allowlist."""
+def write_atomic(path: Path, text: str, *, private: bool = False) -> None:
+    write_bytes_atomic(path, text.encode("utf-8"), private=private)
+
+
+def write_bytes_atomic(path: Path, data: bytes, *, private: bool = False) -> None:
+    """A crash mid-write must not leave a half-written file. A private one (and its folder) is readable only by its
+    owner from the start, not chmod-ed after writing. POSIX only: on Windows the user's profile ACL applies."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    if private and os.name == "posix":
+        path.parent.chmod(0o700)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, "utf-8", newline="\n")
+    tmp.unlink(missing_ok=True)  # a leftover would keep its own mode
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600 if private else 0o666)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
     os.replace(tmp, path)

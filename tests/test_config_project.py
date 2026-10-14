@@ -20,9 +20,12 @@ def test_config_rejects_bad_names(home):
     assert e.value.code == "bad_config"
 
 
-def test_session_path_rejects_traversal(home):
-    with pytest.raises(TelepeepError):
-        config.session_path("../evil")
+def test_config_rejects_unknown_storage(home):
+    config.CONFIG_DIR.mkdir(parents=True)
+    config.CONFIG_FILE.write_text('[sessions]\nstorage = "cloud"\n', "utf-8")
+    with pytest.raises(TelepeepError) as e:
+        config.load()
+    assert e.value.code == "bad_config"
 
 
 def test_no_project(home):

@@ -27,8 +27,13 @@ Machine-wide, per OS user (paths from [platformdirs](https://github.com/tox-dev/
 
 ```
 <config dir>/telepeep/config.toml        API credentials, limits, accounts and the catalog of each
-<data dir>/telepeep/sessions/<alias>.session   one Telethon session per account — full access to it
+<data dir>/telepeep/sessions/<alias>.tps       one session per account — full access to it; encrypted
 ```
+
+A session file is encrypted (AES-256-GCM); its key is kept in the OS secret store: Windows Credential Manager,
+macOS Keychain, Secret Service on Linux (GNOME Keyring, KWallet). Where there is none — headless Linux, WSL,
+containers — set `storage = "file"` under `[sessions]` to keep sessions unencrypted, readable only by you.
+Sessions from telepeep 0.1.0 (`<alias>.session`) are converted on first use.
 
 `<config dir>` is `%APPDATA%` on Windows, `~/.config` on Linux, `~/Library/Application Support` on macOS;
 `<data dir>` is `%LOCALAPPDATA%`, `~/.local/share`, `~/Library/Application Support`. `telepeep status` prints both.
@@ -52,6 +57,9 @@ api_hash = "..."
 
 [limits]
 max_media_mb = 50
+
+[sessions]
+storage = "keyring"   # or "file": no OS secret store, sessions unencrypted
 
 [accounts.work]
 user_id = 111111111
@@ -150,8 +158,12 @@ print the exact rules for your machine, e.g. on Windows:
   from running `allow` / `grant` from its shell, and the deny rules keep Claude's file tools away from the config and
   sessions — but a process running as you can read your files, and a shell command is not a file tool. The catalog
   bounds what a misconfigured or edited project can reach.
-- A session file is full access to the Telegram account. If one leaks, end it in Telegram → Settings → Devices
-  (telepeep sessions show as "telepeep"), or `telepeep logout <account>`.
+- A session is full access to the Telegram account. Encryption makes a copied session file useless on its own — a
+  backup, a synced folder, a stealer that collects session files — but not against a process running as you: it can
+  ask the OS secret store for the key just as telepeep does. To limit what a leak exposes, consider a separate
+  Telegram account for the agent, a member of only the chats it needs.
+- If a session leaks, end it in Telegram → Settings → Devices (telepeep sessions show as "telepeep"), or
+  `telepeep logout <account>`.
 
 ## Development
 

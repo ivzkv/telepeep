@@ -16,7 +16,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import config, guard, media, project
+from . import config, guard, media, project, vault
 from .config import CONFIG_FILE, SESSIONS_DIR, check_name
 from .errors import EXIT_NO_ACCESS, EXIT_USAGE, TelepeepError
 from .guard import as_chat_id, parse_ref
@@ -118,10 +118,12 @@ async def cmd_status(args) -> None:
     missing = project.missing_deny_rules()
     if missing:
         hints.append("add to .claude/settings.json permissions.deny: " + ", ".join(missing))
-
     cfg = config.load()
+    if cfg.session_storage == "file":
+        hints.append("sessions are kept unencrypted (sessions.storage = \"file\" in the config)")
+
     result = {"version": VERSION, "project": state, "config_file": str(CONFIG_FILE), "config_found": CONFIG_FILE.exists(),
-              "sessions_dir": str(SESSIONS_DIR), "deny_rules_missing": missing}
+              "sessions_dir": str(SESSIONS_DIR), "session_storage": cfg.session_storage, "deny_rules_missing": missing}
     if state["access_file"]:
         access = project.load_access()
         result["chats"] = guard.effective(access, cfg)
@@ -197,7 +199,9 @@ def cmd_login(args) -> None:
         account.label = args.label
     config.save(cfg)
     who = me["name"] + (f" (@{me['username']})" if me["username"] else "")
-    _out(f"Logged in as {who} → account '{alias}'. Session: {config.session_path(alias)}")
+    kept = ("encrypted, key in the OS secret store" if cfg.session_storage == "keyring"
+            else "unencrypted, readable only by you")
+    _out(f"Logged in as {who} → account '{alias}'. Session: {vault.path(alias)} ({kept})")
     _out(f"Next: {RUN} list {alias}, then {RUN} allow {alias} <chat>")
 
 
@@ -206,7 +210,7 @@ def cmd_logout(args) -> None:
     cfg = config.load()
     cfg.account(args.account)
     done = asyncio.run(tg.logout(cfg, args.account))
-    _out(f"Account '{args.account}': " + ("logged out, session deleted" if done else "no session on this machine")
+    _out(f"Account '{args.account}': " + ("logged out, session and its key deleted" if done else "no session on this machine")
          + ". Its catalog is kept; projects cannot read its chats until you log in again.")
 
 
@@ -215,7 +219,7 @@ def cmd_accounts(args) -> None:
     if not cfg.accounts:
         _out(f"No accounts yet: {RUN} login <account>")
     for acc in cfg.accounts.values():
-        session = "logged in" if config.session_path(acc.alias).exists() else "no session"
+        session = "logged in" if vault.exists(acc.alias) else "no session"
         _out(f"{acc.alias:<16} {session:<11} user {acc.user_id}  {len(acc.chats)} chat(s) in catalog  {acc.label}")
         for c in acc.chats:
             _out(f"    {c.name:<24} {c.id}")
