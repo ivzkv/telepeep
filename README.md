@@ -162,8 +162,8 @@ print the exact rules for your machine, e.g. on Windows:
   backup, a synced folder, a stealer that collects session files — but not against a process running as you: it can
   ask the OS secret store for the key just as telepeep does. To limit what a leak exposes, consider a separate
   Telegram account for the agent, a member of only the chats it needs.
-- If a session leaks, end it in Telegram → Settings → Devices (telepeep sessions show as "telepeep"), or
-  `telepeep logout <account>`.
+- If a session leaks, end it in Telegram → Settings → Devices, or `telepeep logout <account>`. A telepeep session
+  shows the device model "telepeep" and the app name you registered at my.telegram.org.
 
 ## Development
 

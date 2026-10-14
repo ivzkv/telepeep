@@ -399,7 +399,7 @@ async def logout(cfg: Config, alias: str) -> bool:
     except TelepeepError as e:
         vault.delete(alias)
         raise TelepeepError("logout_local_only", f"{e.message}; it is deleted on this machine, but still active in "
-                            "Telegram", hint="end it in Telegram → Settings → Devices (shown as telepeep)") from None
+                            "Telegram", hint="end it in Telegram → Settings → Devices (device model \"telepeep\")") from None
     try:
         await client.connect()
         if await client.is_user_authorized():
