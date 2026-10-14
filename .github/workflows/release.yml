@@ -1,0 +1,60 @@
+name: Release
+
+# A push to the `release` branch publishes the version from src/telepeep/__init__.py:
+# checks (tests, CLI smoke test, build) → tag vX.Y.Z on the pushed commit + a GitHub Release with generated notes.
+# Bump __version__ before pushing; if the tag already exists the run fails and nothing is published.
+# Projects fetch the tag's source and run it with `uv run --frozen`, so uv.lock must be committed and current.
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write # create the tag and the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, to check whether this version is already released
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -nE 's/^__version__ = "(.+)"$/\1/p' src/telepeep/__init__.py)
+          [ -n "$version" ] || { echo "::error::no __version__ in src/telepeep/__init__.py"; exit 1; }
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if this version is already released
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG already exists — bump __version__, commit, push again"
+            exit 1
+          fi
+
+      - run: uv lock --check # what projects run with --frozen
+      - run: uv run --frozen pytest -q
+      - name: CLI smoke test
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          out=$(uv run --frozen --no-dev telepeep version)
+          echo "$out"
+          [ "$out" = "telepeep $TAG" ] || { echo "::error::expected 'telepeep $TAG', got '$out'"; exit 1; }
+      - run: uv build
+
+      - name: Tag and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes

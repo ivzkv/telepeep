@@ -1,0 +1,36 @@
+[project]
+name = "telepeep"
+dynamic = ["version"]
+description = "Give your coding agent safe, read-only access to the Telegram chats you choose, per project, with a Claude Code skill"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "telethon>=1.36,<2",
+    "platformdirs>=4",
+    "tomli-w>=1",
+    "qrcode>=7",  # QR login: printed in the terminal, scanned with the phone
+]
+keywords = ["telegram", "telethon", "cli", "ai-agent", "claude-code", "read-only"]
+
+[project.urls]
+Repository = "https://github.com/ivzkv/telepeep"
+
+[project.scripts]
+telepeep = "telepeep.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/telepeep/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/telepeep"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
