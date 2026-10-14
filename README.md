@@ -82,12 +82,25 @@ exists and still belongs to the user recorded at login.
 
 ## Quick start
 
-Requires git and [uv](https://docs.astral.sh/uv/) (uv fetches a suitable Python itself). From the project root:
+Requires git and [uv](https://docs.astral.sh/uv/) (uv fetches a suitable Python itself). From the project root, with
+`vX.Y.Z` a release tag:
 
 ```
 git -c advice.detachedHead=false clone -q --depth 1 --branch vX.Y.Z https://github.com/ivzkv/telepeep.git .telepeep/tool
 uv run --project .telepeep/tool --frozen --no-dev --quiet telepeep init
 ```
+
+1. `git clone` puts the source of that tag into `.telepeep/tool/`. There is no build or install step: uv creates the
+   tool's own environment on the first run.
+2. `init` creates `.telepeep/` with an empty `access.toml` and a `.gitignore`, pins the version in
+   `.telepeep/version`, installs the Claude Code skill to `.claude/skills/telepeep/SKILL.md`, and prints the deny rules
+   missing from `.claude/settings.json` (see [Using with Claude Code](#using-with-claude-code)).
+
+Or let Claude Code do these two steps: give it the skill of the tag,
+`https://raw.githubusercontent.com/ivzkv/telepeep/vX.Y.Z/src/telepeep/skill/SKILL.md`, and ask it to follow
+"First-time setup". Fetching the tool runs code from GitHub, so the agent may ask for your permission first.
+
+Nothing is added to the project's own `pyproject.toml` or virtual environment.
 
 Then, in **your own terminal** (these commands refuse to run without one):
 

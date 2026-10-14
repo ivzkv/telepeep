@@ -36,7 +36,7 @@ Never ask for, accept or pass on phone numbers, login codes or two-step verifica
 
 ## Version and fetching
 
-`.telepeep/version` (committed) holds the pinned version, one line, e.g. `0.2.0`. `.telepeep/tool/` (not in git) holds the source of that tag; uv builds its environment on the first run.
+`.telepeep/version` (committed) holds the pinned version, one line, e.g. `0.2.1`. `.telepeep/tool/` (not in git) holds the source of that tag; uv builds its environment on the first run.
 
 If `.telepeep/tool/` does not exist, fetch it from the project root (needs `git`, `uv`, access to github.com and PyPI), with `<version>` from `.telepeep/version`:
 
@@ -46,9 +46,19 @@ git -c advice.detachedHead=false clone -q --depth 1 --branch v<version> https://
 
 If the tool warns that `.telepeep/version` pins another version than the one running, delete `.telepeep/tool/` and fetch again the same way. Do not install telepeep with pip or `uv tool`, do not change files inside `.telepeep/tool/`, and do not fetch from any other source. If the fetch fails (no network, no access to github.com, the tag does not exist, `uv` is missing), stop and tell the user.
 
-If `.telepeep/version` does not exist, the project is not connected — stop and tell the user.
+If `.telepeep/version` does not exist, the project is not connected — stop and tell the user, unless they asked you to set it up (see "First-time setup").
 
 To move the project to another version — only when the user asks: write the new version to `.telepeep/version`, delete `.telepeep/tool/`, fetch, then run `skill` (it updates this file to that version's text).
+
+## First-time setup
+
+Only when the user asks to connect telepeep to a project that has no `.telepeep/version`. Use the version the user names, or the tag in the URL this file was fetched from (`…/telepeep/v<version>/…`); if neither gives one, ask. From the project root:
+
+1. Fetch the tool: the `git clone` command above with that `<version>`. It runs code from GitHub — ask the user first if your permissions require it.
+2. Run `init`. It creates `.telepeep/` with an empty `access.toml` and a `.gitignore`, pins `.telepeep/version`, installs this skill to `.claude/skills/telepeep/SKILL.md` and prints the deny rules missing from `.claude/settings.json`.
+3. Tell the user what is left for them, in their own terminal: `login <account>`, `list <account>`, `allow <account> <chat>`, `grant <account>:<chat>`; to add the printed deny rules; and to commit `.telepeep/version`, `.telepeep/.gitignore` and the skill.
+
+Do not run the user's commands yourself and do not edit `access.toml`.
 
 ## Output
 
